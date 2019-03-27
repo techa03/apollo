@@ -6,6 +6,7 @@ import com.ctrip.framework.apollo.portal.entity.po.Favorite;
 import com.ctrip.framework.apollo.portal.repository.FavoriteRepository;
 
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
@@ -22,6 +23,10 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
 
   private String testUser = "apollo";
 
+  @Before
+  public void before() {
+
+  }
 
   @Test
   @Sql(scripts = "/sql/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
@@ -30,7 +35,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
     Favorite favorite = instanceOfFavorite(testUser, testApp);
     favoriteService.addFavorite(favorite);
 
-    List<Favorite> createdFavorites = favoriteService.search(testUser, testApp, new PageRequest(0, 10));
+    List<Favorite> createdFavorites = favoriteService.search(testUser, testApp, PageRequest.of(0, 10));
 
     Assert.assertEquals(1, createdFavorites.size());
 
@@ -52,7 +57,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   @Sql(scripts = "/sql/favorites/favorites.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
   @Sql(scripts = "/sql/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
   public void testSearchByUserId() {
-    List<Favorite> favorites = favoriteService.search(testUser, null, new PageRequest(0, 10));
+    List<Favorite> favorites = favoriteService.search(testUser, null, PageRequest.of(0, 10));
     Assert.assertEquals(4, favorites.size());
   }
 
@@ -60,7 +65,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   @Sql(scripts = "/sql/favorites/favorites.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
   @Sql(scripts = "/sql/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
   public void testSearchByAppId() {
-    List<Favorite> favorites = favoriteService.search(null, "test0621-04", new PageRequest(0, 10));
+    List<Favorite> favorites = favoriteService.search(null, "test0621-04", PageRequest.of(0, 10));
     Assert.assertEquals(3, favorites.size());
   }
 
@@ -68,7 +73,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   @Sql(scripts = "/sql/favorites/favorites.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
   @Sql(scripts = "/sql/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
   public void testSearchByAppIdAndUserId() {
-    List<Favorite> favorites = favoriteService.search(testUser, "test0621-04", new PageRequest(0, 10));
+    List<Favorite> favorites = favoriteService.search(testUser, "test0621-04", PageRequest.of(0, 10));
     Assert.assertEquals(1, favorites.size());
   }
 
@@ -76,7 +81,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   @Sql(scripts = "/sql/favorites/favorites.sql", executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
   @Sql(scripts = "/sql/cleanup.sql", executionPhase = Sql.ExecutionPhase.AFTER_TEST_METHOD)
   public void testSearchWithErrorParams() {
-    favoriteService.search(null, null, new PageRequest(0, 10));
+    favoriteService.search(null, null, PageRequest.of(0, 10));
   }
 
   @Test
@@ -85,7 +90,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   public void testDeleteFavorite() {
     long legalFavoriteId = 21L;
     favoriteService.deleteFavorite(legalFavoriteId);
-    Assert.assertNull(favoriteRepository.findOne(legalFavoriteId));
+    Assert.assertNull(favoriteRepository.findById(legalFavoriteId).orElse(null));
   }
 
   @Test(expected = BadRequestException.class)
@@ -94,7 +99,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
   public void testDeleteFavoriteFail() {
     long anotherPersonFavoriteId = 23L;
     favoriteService.deleteFavorite(anotherPersonFavoriteId);
-    Assert.assertNull(favoriteRepository.findOne(anotherPersonFavoriteId));
+    Assert.assertNull(favoriteRepository.findById(anotherPersonFavoriteId).orElse(null));
   }
 
   @Test(expected = BadRequestException.class)
@@ -112,7 +117,7 @@ public class FavoriteServiceTest extends AbstractIntegrationTest {
     long toAdjustFavoriteId = 20;
     favoriteService.adjustFavoriteToFirst(toAdjustFavoriteId);
 
-    List<Favorite> favorites = favoriteService.search(testUser, null, new PageRequest(0, 10));
+    List<Favorite> favorites = favoriteService.search(testUser, null, PageRequest.of(0, 10));
     Favorite firstFavorite = favorites.get(0);
     Favorite secondFavorite = favorites.get(1);
 

@@ -1,5 +1,8 @@
 package com.ctrip.framework.apollo.common.entity;
 
+import com.ctrip.framework.apollo.common.utils.InputValidator;
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Pattern;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.Where;
 
@@ -13,9 +16,15 @@ import javax.persistence.Table;
 @Where(clause = "isDeleted = 0")
 public class App extends BaseEntity {
 
+  @NotBlank(message = "Name cannot be blank")
   @Column(name = "Name", nullable = false)
   private String name;
 
+  @NotBlank(message = "AppId cannot be blank")
+  @Pattern(
+      regexp = InputValidator.CLUSTER_NAMESPACE_VALIDATOR,
+      message = InputValidator.INVALID_CLUSTER_NAMESPACE_MESSAGE
+  )
   @Column(name = "AppId", nullable = false)
   private String appId;
 
@@ -25,9 +34,11 @@ public class App extends BaseEntity {
   @Column(name = "OrgName", nullable = false)
   private String orgName;
 
+  @NotBlank(message = "OwnerName cannot be blank")
   @Column(name = "OwnerName", nullable = false)
   private String ownerName;
 
+  @NotBlank(message = "OwnerEmail cannot be blank")
   @Column(name = "OwnerEmail", nullable = false)
   private String ownerEmail;
 
@@ -86,4 +97,53 @@ public class App extends BaseEntity {
         .add("ownerName", ownerName)
         .add("ownerEmail", ownerEmail).toString();
   }
+
+  public static class Builder {
+
+    public Builder() {
+    }
+
+    private App app = new App();
+
+    public Builder name(String name) {
+      app.setName(name);
+      return this;
+    }
+
+    public Builder appId(String appId) {
+      app.setAppId(appId);
+      return this;
+    }
+
+    public Builder orgId(String orgId) {
+      app.setOrgId(orgId);
+      return this;
+    }
+
+    public Builder orgName(String orgName) {
+      app.setOrgName(orgName);
+      return this;
+    }
+
+    public Builder ownerName(String ownerName) {
+      app.setOwnerName(ownerName);
+      return this;
+    }
+
+    public Builder ownerEmail(String ownerEmail) {
+      app.setOwnerEmail(ownerEmail);
+      return this;
+    }
+
+    public App build() {
+      return app;
+    }
+
+  }
+
+  public static Builder builder() {
+    return new Builder();
+  }
+
+
 }

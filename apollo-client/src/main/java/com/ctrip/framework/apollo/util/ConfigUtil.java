@@ -1,5 +1,7 @@
 package com.ctrip.framework.apollo.util;
 
+import com.google.common.util.concurrent.RateLimiter;
+import java.io.File;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
@@ -9,7 +11,6 @@ import com.ctrip.framework.apollo.core.ConfigConsts;
 import com.ctrip.framework.apollo.core.MetaDomainConsts;
 import com.ctrip.framework.apollo.core.enums.Env;
 import com.ctrip.framework.apollo.core.enums.EnvUtils;
-import com.ctrip.framework.apollo.exceptions.ApolloConfigException;
 import com.ctrip.framework.foundation.Foundation;
 import com.google.common.base.Strings;
 
@@ -33,8 +34,11 @@ public class ConfigUtil {
   private long configCacheExpireTime = 1;//1 minute
   private TimeUnit configCacheExpireTimeUnit = TimeUnit.MINUTES;//1 minute
   private long longPollingInitialDelayInMills = 2000;//2 seconds
+  private boolean autoUpdateInjectedSpringProperties = true;
+  private final RateLimiter warnLogRateLimiter;
 
   public ConfigUtil() {
+    warnLogRateLimiter = RateLimiter.create(0.017); // 1 warning log output per minute
     initRefreshInterval();
     initConnectTimeout();
     initReadTimeout();
@@ -42,6 +46,7 @@ public class ConfigUtil {
     initQPS();
     initMaxConfigCacheSize();
     initLongPollingInitialDelayInMills();
+    initAutoUpdateInjectedSpringProperties();
   }
 
   /**
@@ -53,8 +58,10 @@ public class ConfigUtil {
     String appId = Foundation.app().getAppId();
     if (Strings.isNullOrEmpty(appId)) {
       appId = ConfigConsts.NO_APPID_PLACEHOLDER;
-      logger.warn("app.id is not set, please make sure it is set in classpath:/META-INF/app.properties, now apollo " +
-          "will only load public namespace configurations!");
+      if (warnLogRateLimiter.tryAcquire()) {
+        logger.warn(
+            "app.id is not set, please make sure it is set in classpath:/META-INF/app.properties, now apollo will only load public namespace configurations!");
+      }
     }
     return appId;
   }
@@ -95,19 +102,10 @@ public class ConfigUtil {
   /**
    * Get the current environment.
    *
-   * @return the env
-   * @throws ApolloConfigException if env is set
+   * @return the env, UNKNOWN if env is not set or invalid
    */
   public Env getApolloEnv() {
-    Env env = EnvUtils.transformEnv(Foundation.server().getEnvType());
-    if (env == null) {
-      String path = isOSWindows() ? "C:\\opt\\settings\\server.properties" :
-          "/opt/settings/server.properties";
-      String message = String.format("env is not set, please make sure it is set in %s!", path);
-      logger.error(message);
-      throw new ApolloConfigException(message);
-    }
-    return env;
+    return EnvUtils.transformEnv(Foundation.server().getEnvType());
   }
 
   public String getLocalIp() {
@@ -204,14 +202,34 @@ public class ConfigUtil {
   }
 
   public String getDefaultLocalCacheDir() {
-    String cacheRoot = isOSWindows() ? "C:\\opt\\data\\%s" : "/opt/data/%s";
+    String cacheRoot = getCustomizedCacheRoot();
+
+    if (!Strings.isNullOrEmpty(cacheRoot)) {
+      return cacheRoot + File.separator + getAppId();
+    }
+
+    cacheRoot = isOSWindows() ? "C:\\opt\\data\\%s" : "/opt/data/%s";
     return String.format(cacheRoot, getAppId());
+  }
+
+  private String getCustomizedCacheRoot() {
+    // 1. Get from System Property
+    String cacheRoot = System.getProperty("apollo.cacheDir");
+    if (Strings.isNullOrEmpty(cacheRoot)) {
+      // 2. Get from OS environment variable
+      cacheRoot = System.getenv("APOLLO_CACHEDIR");
+    }
+    if (Strings.isNullOrEmpty(cacheRoot)) {
+      // 3. Get from server.properties
+      cacheRoot = Foundation.server().getProperty("apollo.cacheDir", null);
+    }
+
+    return cacheRoot;
   }
 
   public boolean isInLocalMode() {
     try {
-      Env env = getApolloEnv();
-      return env == Env.LOCAL;
+      return Env.LOCAL == getApolloEnv();
     } catch (Throwable ex) {
       //ignore
     }
@@ -262,5 +280,21 @@ public class ConfigUtil {
 
   public long getLongPollingInitialDelayInMills() {
     return longPollingInitialDelayInMills;
+  }
+
+  private void initAutoUpdateInjectedSpringProperties() {
+    // 1. Get from System Property
+    String enableAutoUpdate = System.getProperty("apollo.autoUpdateInjectedSpringProperties");
+    if (Strings.isNullOrEmpty(enableAutoUpdate)) {
+      // 2. Get from app.properties
+      enableAutoUpdate = Foundation.app().getProperty("apollo.autoUpdateInjectedSpringProperties", null);
+    }
+    if (!Strings.isNullOrEmpty(enableAutoUpdate)) {
+      autoUpdateInjectedSpringProperties = Boolean.parseBoolean(enableAutoUpdate.trim());
+    }
+  }
+
+  public boolean isAutoUpdateInjectedSpringPropertiesEnabled() {
+    return autoUpdateInjectedSpringProperties;
   }
 }

@@ -30,7 +30,8 @@
                     <h5>创建项目</h5>
                 </div>
             </div>
-            <div class="app-panel col-md-2 text-center" ng-repeat="app in createdApps" ng-click="goToAppHomePage(app.appId)">
+            <div class="app-panel col-md-2 text-center" ng-repeat="app in createdApps"
+                 ng-click="goToAppHomePage(app.appId)">
                 <div href="#" class="thumbnail hover cursor-pointer">
                     <h4 ng-bind="app.appId"></h4>
                     <h5 ng-bind="app.name"></h5>
@@ -80,7 +81,7 @@
                 </div>
             </div>
             <div class="no-favorites text-center" ng-show="!favorites || favorites.length == 0">
-                <h4>您还没有收藏过任何项目,在项目主页可以收藏项目哟~</h4>
+                <h4>您还没有收藏过任何项目，在项目主页可以收藏项目哟~</h4>
             </div>
 
         </aside>
@@ -118,15 +119,13 @@
 <!-- bootstrap.js -->
 <script src="vendor/bootstrap/js/bootstrap.min.js" type="text/javascript"></script>
 
-<!--nicescroll-->
-<script src="vendor/jquery.nicescroll.min.js"></script>
-
 <script type="application/javascript" src="scripts/app.js"></script>
 <script type="application/javascript" src="scripts/services/AppService.js"></script>
 <script type="application/javascript" src="scripts/services/EnvService.js"></script>
 <script type="application/javascript" src="scripts/services/UserService.js"></script>
 <script type="application/javascript" src="scripts/services/CommonService.js"></script>
 <script type="application/javascript" src="scripts/services/FavoriteService.js"></script>
+<script type="application/javascript" src="scripts/services/PermissionService.js"></script>
 <script type="application/javascript" src="scripts/AppUtils.js"></script>
 <script type="application/javascript" src="scripts/directive/directive.js"></script>
 

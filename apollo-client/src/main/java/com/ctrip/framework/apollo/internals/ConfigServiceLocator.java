@@ -1,5 +1,7 @@
 package com.ctrip.framework.apollo.internals;
 
+import com.ctrip.framework.apollo.core.ServiceNameConsts;
+import com.ctrip.framework.foundation.Foundation;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
@@ -51,8 +53,55 @@ public class ConfigServiceLocator {
     m_configUtil = ApolloInjector.getInstance(ConfigUtil.class);
     this.m_executorService = Executors.newScheduledThreadPool(1,
         ApolloThreadFactory.create("ConfigServiceLocator", true));
+    initConfigServices();
+  }
+
+  private void initConfigServices() {
+    // get from run time configurations
+    List<ServiceDTO> customizedConfigServices = getCustomizedConfigService();
+
+    if (customizedConfigServices != null) {
+      setConfigServices(customizedConfigServices);
+      return;
+    }
+
+    // update from meta service
     this.tryUpdateConfigServices();
     this.schedulePeriodicRefresh();
+  }
+
+  private List<ServiceDTO> getCustomizedConfigService() {
+    // 1. Get from System Property
+    String configServices = System.getProperty("apollo.configService");
+    if (Strings.isNullOrEmpty(configServices)) {
+      // 2. Get from OS environment variable
+      configServices = System.getenv("APOLLO_CONFIGSERVICE");
+    }
+    if (Strings.isNullOrEmpty(configServices)) {
+      // 3. Get from server.properties
+      configServices = Foundation.server().getProperty("apollo.configService", null);
+    }
+
+    if (Strings.isNullOrEmpty(configServices)) {
+      return null;
+    }
+
+    logger.warn("Located config services from apollo.configService configuration: {}, will not refresh config services from remote meta service!", configServices);
+
+    // mock service dto list
+    String[] configServiceUrls = configServices.split(",");
+    List<ServiceDTO> serviceDTOS = Lists.newArrayList();
+
+    for (String configServiceUrl : configServiceUrls) {
+      configServiceUrl = configServiceUrl.trim();
+      ServiceDTO serviceDTO = new ServiceDTO();
+      serviceDTO.setHomepageUrl(configServiceUrl);
+      serviceDTO.setAppName(ServiceNameConsts.APOLLO_CONFIGSERVICE);
+      serviceDTO.setInstanceId(configServiceUrl);
+      serviceDTOS.add(serviceDTO);
+    }
+
+    return serviceDTOS;
   }
 
   /**
@@ -106,11 +155,10 @@ public class ConfigServiceLocator {
         transaction.setStatus(Transaction.SUCCESS);
         List<ServiceDTO> services = response.getBody();
         if (services == null || services.isEmpty()) {
-          logConfigServiceToCat("Empty response!");
+          logConfigService("Empty response!");
           continue;
         }
-        m_configServices.set(services);
-        logConfigServicesToCat(services);
+        setConfigServices(services);
         return;
       } catch (Throwable ex) {
         Tracer.logEvent("ApolloConfigException", ExceptionUtil.getDetailMessage(ex));
@@ -131,6 +179,11 @@ public class ConfigServiceLocator {
         String.format("Get config services failed from %s", url), exception);
   }
 
+  private void setConfigServices(List<ServiceDTO> services) {
+    m_configServices.set(services);
+    logConfigServices(services);
+  }
+
   private String assembleMetaServiceUrl() {
     String domainName = m_configUtil.getMetaServerDomainName();
     String appId = m_configUtil.getAppId();
@@ -145,13 +198,13 @@ public class ConfigServiceLocator {
     return domainName + "/services/config?" + MAP_JOINER.join(queryParams);
   }
 
-  private void logConfigServicesToCat(List<ServiceDTO> serviceDtos) {
+  private void logConfigServices(List<ServiceDTO> serviceDtos) {
     for (ServiceDTO serviceDto : serviceDtos) {
-      logConfigServiceToCat(serviceDto.getHomepageUrl());
+      logConfigService(serviceDto.getHomepageUrl());
     }
   }
 
-  private void logConfigServiceToCat(String serviceUrl) {
+  private void logConfigService(String serviceUrl) {
     Tracer.logEvent("Apollo.Config.Services", serviceUrl);
   }
 }

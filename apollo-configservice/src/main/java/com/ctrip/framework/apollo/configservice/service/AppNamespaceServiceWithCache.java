@@ -1,24 +1,23 @@
 package com.ctrip.framework.apollo.configservice.service;
 
+import com.ctrip.framework.apollo.biz.config.BizConfig;
+import com.ctrip.framework.apollo.biz.repository.AppNamespaceRepository;
+import com.ctrip.framework.apollo.common.entity.AppNamespace;
+import com.ctrip.framework.apollo.configservice.wrapper.CaseInsensitiveMapWrapper;
+import com.ctrip.framework.apollo.core.ConfigConsts;
+import com.ctrip.framework.apollo.core.utils.ApolloThreadFactory;
+import com.ctrip.framework.apollo.core.utils.StringUtils;
+import com.ctrip.framework.apollo.tracer.Tracer;
+import com.ctrip.framework.apollo.tracer.spi.Transaction;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-
-import com.ctrip.framework.apollo.biz.config.BizConfig;
-import com.ctrip.framework.apollo.biz.repository.AppNamespaceRepository;
-import com.ctrip.framework.apollo.common.entity.AppNamespace;
-import com.ctrip.framework.apollo.core.ConfigConsts;
-import com.ctrip.framework.apollo.core.utils.ApolloThreadFactory;
-import com.ctrip.framework.apollo.tracer.Tracer;
-import com.ctrip.framework.apollo.tracer.spi.Transaction;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
@@ -38,11 +37,8 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
   private static final Logger logger = LoggerFactory.getLogger(AppNamespaceServiceWithCache.class);
   private static final Joiner STRING_JOINER = Joiner.on(ConfigConsts.CLUSTER_NAMESPACE_SEPARATOR)
       .skipNulls();
-  @Autowired
-  private AppNamespaceRepository appNamespaceRepository;
-
-  @Autowired
-  private BizConfig bizConfig;
+  private final AppNamespaceRepository appNamespaceRepository;
+  private final BizConfig bizConfig;
 
   private int scanInterval;
   private TimeUnit scanIntervalTimeUnit;
@@ -52,21 +48,34 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
   private long maxIdScanned;
 
   //store namespaceName -> AppNamespace
-  private Map<String, AppNamespace> publicAppNamespaceCache;
+  private CaseInsensitiveMapWrapper<AppNamespace> publicAppNamespaceCache;
 
   //store appId+namespaceName -> AppNamespace
-  private Map<String, AppNamespace> appNamespaceCache;
+  private CaseInsensitiveMapWrapper<AppNamespace> appNamespaceCache;
 
   //store id -> AppNamespace
   private Map<Long, AppNamespace> appNamespaceIdCache;
 
-  public AppNamespaceServiceWithCache() {
+  public AppNamespaceServiceWithCache(
+      final AppNamespaceRepository appNamespaceRepository,
+      final BizConfig bizConfig) {
+    this.appNamespaceRepository = appNamespaceRepository;
+    this.bizConfig = bizConfig;
+    initialize();
+  }
+
+  private void initialize() {
     maxIdScanned = 0;
-    publicAppNamespaceCache = Maps.newConcurrentMap();
-    appNamespaceCache = Maps.newConcurrentMap();
+    publicAppNamespaceCache = new CaseInsensitiveMapWrapper<>(Maps.newConcurrentMap());
+    appNamespaceCache = new CaseInsensitiveMapWrapper<>(Maps.newConcurrentMap());
     appNamespaceIdCache = Maps.newConcurrentMap();
     scheduledExecutorService = Executors.newScheduledThreadPool(1, ApolloThreadFactory
         .create("AppNamespaceServiceWithCache", true));
+  }
+
+  public AppNamespace findByAppIdAndNamespace(String appId, String namespaceName) {
+    Preconditions.checkArgument(!StringUtils.isContainEmpty(appId, namespaceName), "appId and namespaceName must not be empty");
+    return appNamespaceCache.get(STRING_JOINER.join(appId, namespaceName));
   }
 
   public List<AppNamespace> findByAppIdAndNamespaces(String appId, Set<String> namespaceNames) {
@@ -74,7 +83,6 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
     if (namespaceNames == null || namespaceNames.isEmpty()) {
       return Collections.emptyList();
     }
-//    return appNamespaceRepository.findByAppIdAndNameIn(appId, namespaceNames);
     List<AppNamespace> result = Lists.newArrayList();
     for (String namespaceName : namespaceNames) {
       AppNamespace appNamespace = appNamespaceCache.get(STRING_JOINER.join(appId, namespaceName));
@@ -85,12 +93,16 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
     return result;
   }
 
+  public AppNamespace findPublicNamespaceByName(String namespaceName) {
+    Preconditions.checkArgument(!Strings.isNullOrEmpty(namespaceName), "namespaceName must not be empty");
+    return publicAppNamespaceCache.get(namespaceName);
+  }
+
   public List<AppNamespace> findPublicNamespacesByNames(Set<String> namespaceNames) {
     if (namespaceNames == null || namespaceNames.isEmpty()) {
       return Collections.emptyList();
     }
 
-//    return appNamespaceRepository.findByNameInAndIsPublicTrue(namespaceNames);
     List<AppNamespace> result = Lists.newArrayList();
     for (String namespaceName : namespaceNames) {
       AppNamespace appNamespace = publicAppNamespaceCache.get(namespaceName);
@@ -172,7 +184,7 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
     }
     List<List<Long>> partitionIds = Lists.partition(ids, 500);
     for (List<Long> toRebuild : partitionIds) {
-      Iterable<AppNamespace> appNamespaces = appNamespaceRepository.findAll(toRebuild);
+      Iterable<AppNamespace> appNamespaces = appNamespaceRepository.findAllById(toRebuild);
 
       if (appNamespaces == null) {
         continue;
@@ -233,7 +245,11 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
       }
       appNamespaceCache.remove(assembleAppNamespaceKey(deleted));
       if (deleted.isPublic()) {
-        publicAppNamespaceCache.remove(deleted.getName());
+        AppNamespace publicAppNamespace = publicAppNamespaceCache.get(deleted.getName());
+        // in case there is some dirty data, e.g. public namespace deleted in some app and now created in another app
+        if (publicAppNamespace == deleted) {
+          publicAppNamespaceCache.remove(deleted.getName());
+        }
       }
       logger.info("Found AppNamespace deleted, {}", deleted);
     }
@@ -248,5 +264,12 @@ public class AppNamespaceServiceWithCache implements InitializingBean {
     scanIntervalTimeUnit = bizConfig.appNamespaceCacheScanIntervalTimeUnit();
     rebuildInterval = bizConfig.appNamespaceCacheRebuildInterval();
     rebuildIntervalTimeUnit = bizConfig.appNamespaceCacheRebuildIntervalTimeUnit();
+  }
+
+  //only for test use
+  private void reset() throws Exception {
+    scheduledExecutorService.shutdownNow();
+    initialize();
+    afterPropertiesSet();
   }
 }
